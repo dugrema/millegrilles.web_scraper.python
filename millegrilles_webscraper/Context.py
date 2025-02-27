@@ -15,6 +15,7 @@ class WebScraperContext(MilleGrillesBusContext):
         super().__init__(configuration)
         self.__logger = logging.getLogger(__name__ + '.' + self.__class__.__name__)
         self.__bus_connector: Optional[MilleGrillesPikaConnector] = None
+        self.__scrape_throttle_seconds: Optional[int] = 5
 
     @property
     def bus_connector(self):
@@ -26,3 +27,7 @@ class WebScraperContext(MilleGrillesBusContext):
 
     async def get_producer(self):
         return await self.__bus_connector.get_producer()
+
+    @property
+    def scrape_throttle_seconds(self) -> Optional[int]:
+        return self.__scrape_throttle_seconds
