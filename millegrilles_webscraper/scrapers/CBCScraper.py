@@ -5,8 +5,6 @@ import logging
 
 from typing import Optional
 
-import requests
-
 from millegrilles_webscraper.Context import WebScraperContext
 from millegrilles_webscraper.scrapers.WebScraper import WebScraper
 
