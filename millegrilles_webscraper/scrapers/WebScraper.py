@@ -1,25 +1,68 @@
 import asyncio
 import datetime
 
-from typing import Optional
+from typing import Optional, TypedDict
 
 import pytz
 
+from millegrilles_messages.chiffrage.EncryptionKey import generate_new_secret
 from millegrilles_webscraper.Context import WebScraperContext
+
+
+class FeedInformation(TypedDict):
+    name: str
+    url: Optional[str]
+    auth_username: Optional[str]
+    auth_password: Optional[str]
+
+
+class FeedParametersType(TypedDict):
+    feed_id: str
+    feed_type: str
+    security_level: str
+    domain: str
+    poll_rate: Optional[int]
+    active: bool
+    decrypt_in_database: bool
+    encrypted_feed_information: dict
+    decrypted_feed_information: Optional[dict]
+    deleted: bool
 
 
 class WebScraper:
 
-    def __init__(self, context: WebScraperContext, url: str, semaphore: asyncio.BoundedSemaphore, refresh_rate: Optional[datetime.timedelta] = None):
-        self.__context = context
-        self.__url = url
+    def __init__(self, context: WebScraperContext, feed: FeedParametersType, semaphore: asyncio.BoundedSemaphore):
+        self._context = context
         self.__semaphore = semaphore
-        self.__refresh_rate = refresh_rate
+        self.__feed = feed
+
+        self.__url = feed['decrypted_feed_information']['url']
+        poll_rate = feed.get('poll_rate')
+        if poll_rate:
+            if poll_rate < 30:
+                poll_rate = 30  # Minimum polling of 30 seconds
+            self.__refresh_rate: Optional[datetime.timedelta] = datetime.timedelta(seconds=poll_rate)
+        else:
+            self.__refresh_rate = None
 
         self.__stop_event = asyncio.Event()
 
         self.__last_update: Optional[datetime.datetime] = None
         self.__etag: Optional[str] = None
+
+        ca_certificate = context.ca
+        domains = ['DataCollector']
+        domain = self.__feed.get('domain')
+        if domain and domain != 'DataCollector':
+            domains.append(domain)
+
+        self._encryption_key = generate_new_secret(ca_certificate, domains)
+        self._encryption_key_submitted = False
+        self._key_command: Optional[dict] = None
+
+    @property
+    def feed_id(self):
+        return self.__feed['feed_id']
 
     async def run(self):
         if self.__refresh_rate:
@@ -36,14 +79,17 @@ class WebScraper:
             # Runs once and exits
             await self.__scrape()
 
+    async def stop(self):
+        self.__stop_event.set()
+
     async def __scrape(self):
         async with self.__semaphore:
             await self.scrape()
 
-            throttle = self.__context.scrape_throttle_seconds
+            throttle = self._context.scrape_throttle_seconds
             if throttle:
                 # Throttle, wait several seconds before releasing the semaphore
-                await self.__context.wait(throttle)
+                await self._context.wait(throttle)
 
     async def scrape(self):
         raise NotImplementedError('Must be implemented')

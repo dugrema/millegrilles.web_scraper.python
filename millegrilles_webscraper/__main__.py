@@ -9,6 +9,7 @@ from millegrilles_messages.bus.PikaConnector import MilleGrillesPikaConnector
 
 from millegrilles_webscraper.Configuration import WebScraperConfiguration
 from millegrilles_webscraper.Context import WebScraperContext
+from millegrilles_webscraper.FeedManager import FeedManager
 
 LOGGER = logging.getLogger(__name__)
 
@@ -52,24 +53,13 @@ async def wiring(context: WebScraperContext) -> list[Awaitable]:
     # Create instances
     bus_connector = MilleGrillesPikaConnector(context)
     context.bus_connector = bus_connector
-    # filehost_manager = FilehostManager(context)
-    # backup_transfer = FilehostBackupTransfer(context, filehost_manager)
-    # primary_loader = FilehostPrimaryLoader(context, filehost_manager, backup_transfer)
-    #
-    # # Add listeners on the manager's primary controler event
-    # filehost_manager.add_primary_event_listener(primary_loader.toggle_primary)
-    # filehost_manager.add_primary_event_listener(backup_transfer.toggle_primary)
-    #
-    # command_handler = CommandHandler(context, filehost_manager, primary_loader)
-    # await command_handler.setup()
+    feed_manager = FeedManager(context)
 
     # Create tasks
     coros = [
         context.run(),
         bus_connector.run(),
-        # filehost_manager.run(),
-        # backup_transfer.run(),
-        # primary_loader.run(),
+        feed_manager.run(),
     ]
 
     return coros
