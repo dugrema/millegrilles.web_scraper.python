@@ -84,12 +84,11 @@ class GoogleTrendsScraper(WebScraper):
         self.__logger = logging.getLogger(f'{__name__}.{self.__class__.__name__}')
 
     async def scrape(self):
-        self.__logger.debug(f"Scraping {self.url}")
-
+        self.__logger.debug(f"Scraping START on {self.url}")
         content = await self.get_content()
-        print("Result\n%s" % content)
-
-        pass
+        self.__logger.debug(f"Scraped {len(content)} items, processing")
+        await self.process_content(content)
+        self.__logger.debug(f"Scraping DONE on {self.url}")
 
     async def get_content(self) -> list[DataCollectorGoogleTrendsNewsItem]:
         async with aiohttp.ClientSession() as session:
@@ -109,9 +108,7 @@ class GoogleTrendsScraper(WebScraper):
 
         root = parsed_content.getroot()
 
-        title: Optional[str] = None
         pub_date: Optional[datetime.datetime] = None
-        approx_traffic: Optional[str] = None
         item_picture: Optional[str] = None
         item_picture_source: Optional[str] = None
 
@@ -177,8 +174,11 @@ class GoogleTrendsScraper(WebScraper):
         data = [d for d in data if d.get_data_id() in missing_ids]
 
         if len(data) == 0:
+            self.__logger.debug("No changes to content since last scrape")
             # Nothing to do
             return
+
+        self.__logger.debug("Processing %d new items" % len(data))
 
         if self._encryption_key_submitted is False and self._key_command is None:
             idmg = self._context.ca.idmg
