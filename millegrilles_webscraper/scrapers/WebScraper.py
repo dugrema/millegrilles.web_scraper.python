@@ -64,6 +64,9 @@ class WebScraper:
     def feed_id(self):
         return self.__feed['feed_id']
 
+    async def update_poll_rate(self, rate: Optional[datetime.timedelta]):
+        self.__refresh_rate = rate
+
     async def run(self):
         if self.__refresh_rate:
             # Runs until stopped at the defined refresh_rate

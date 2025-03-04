@@ -84,6 +84,16 @@ class GoogleTrendsScraper(WebScraper):
         super().__init__(context, feed, semaphore)
         self.__logger = logging.getLogger(f'{__name__}.{self.__class__.__name__}')
 
+    def update(self, parameters: FeedParametersType):
+        poll_rate_update = parameters['poll_rate']
+        if poll_rate_update:
+            self.update_poll_rate(datetime.timedelta(seconds=poll_rate_update))
+        else:
+            self.update_poll_rate(None)
+
+        # Decrypt and update url
+        #TODO
+
     async def scrape(self):
         self.__logger.debug(f"Scraping START on {self.url}")
         content = await self.get_content()
@@ -113,11 +123,10 @@ class GoogleTrendsScraper(WebScraper):
         item_picture: Optional[str] = None
         item_picture_source: Optional[str] = None
 
-        group: GroupData = dict()
-
         scraped_items_list: list[DataCollectorGoogleTrendsNewsItem] = list()
 
         for item in root.findall('./channel/item'):
+            group: GroupData = dict()
             for child in item:
                 if child.tag == '{%s}news_item' % ns_ht:
                     news_item_title: Optional[str] = None
