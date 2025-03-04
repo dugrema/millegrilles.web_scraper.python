@@ -1,11 +1,21 @@
 from typing import TypedDict, Optional
 
 
+class DecryptionInfo(TypedDict):
+    cle_id: str
+    nonce: str
+    format: str
+
+class DataCollectorFilesDict(TypedDict):
+    fuuid: str
+    decryption: DecryptionInfo
+
 class DataCollectorDict(TypedDict):
     data_id: str
     feed_id: str
     pub_date: int
     encrypted_data: dict
+    files: Optional[list[DataCollectorFilesDict]]
 
 
 class DataCollectorItem:

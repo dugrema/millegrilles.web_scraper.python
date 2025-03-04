@@ -10,6 +10,7 @@ from millegrilles_messages.bus.PikaConnector import MilleGrillesPikaConnector
 from millegrilles_webscraper.Configuration import WebScraperConfiguration
 from millegrilles_webscraper.Context import WebScraperContext
 from millegrilles_webscraper.FeedManager import FeedManager
+from millegrilles_webscraper.scrapers.AttachedFileHelper import AttachedFileHelper
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,12 +55,17 @@ async def wiring(context: WebScraperContext) -> list[Awaitable]:
     bus_connector = MilleGrillesPikaConnector(context)
     context.bus_connector = bus_connector
     feed_manager = FeedManager(context)
+    attached_file_helper = AttachedFileHelper(context)
+
+    # Additional wiring
+    context.file_handler = attached_file_helper
 
     # Create tasks
     coros = [
         context.run(),
         bus_connector.run(),
         feed_manager.run(),
+        attached_file_helper.run(),
     ]
 
     return coros

@@ -58,7 +58,6 @@ class FeedManager:
         self.__logger.info("Refreshing feeds")
 
         # Load scraper configuration from DataCollector
-        scraper_feed_ids = self.__scapers.keys()
         response = await producer.request(dict(), 'DataCollector', 'getFeedsForScraper', exchange=Constantes.SECURITE_PUBLIC)
 
         if response.parsed.get('ok') is not True:
@@ -66,6 +65,12 @@ class FeedManager:
 
         feeds: list[FeedParametersType] = response.parsed['feeds']
         keys = response.parsed['keys']
+
+        if len(feeds) == 0:
+            self.__logger.info("No configured/active scraper")
+            return
+        elif keys is None:
+            raise ValueError('No decryption keys were received')
 
         # Decrypt the keys message
         decrypted_key_message = dechiffrer_reponse(self.__context.signing_key, keys)
@@ -79,22 +84,35 @@ class FeedManager:
             decrypted_key_map[key_id] = key_bytes
 
         # Decrypt feed configuration
+        unchanged_scraper_feed_ids = set(self.__scapers.keys())
         for feed in feeds:
             feed_id = feed['feed_id']
+            try:
+                unchanged_scraper_feed_ids.remove(feed_id)
+            except KeyError:
+                pass
+
             encrypted_info = feed['encrypted_feed_information']
             key: bytes = decrypted_key_map[encrypted_info['cle_id']]
             cleartext_content: FeedInformation = dechiffrer_document_secrete(key, encrypted_info)
             feed['decrypted_feed_information'] = cleartext_content
 
-            existing_scraper = self.__scapers.get(feed_id)
+            existing_scraper: WebScraper = self.__scapers.get(feed_id)
             if existing_scraper:
-                pass  # Update
+                existing_scraper.update(feed)
             else:
                 # Create and start the scraper
                 scraper = self.create_scraper(feed)
                 self.__scapers[feed_id] = scraper
                 self.__group.create_task(scraper.run())
 
+        for removed_scraper_id in unchanged_scraper_feed_ids:
+            # This scraper was removed (deleted on inactive)
+            scraper: WebScraper = self.__scapers.get(removed_scraper_id)
+            if scraper:
+                self.__logger.info("Stopping scraper id: %s" % removed_scraper_id)
+                del self.__scapers[removed_scraper_id]
+                await scraper.stop()
 
         pass
 

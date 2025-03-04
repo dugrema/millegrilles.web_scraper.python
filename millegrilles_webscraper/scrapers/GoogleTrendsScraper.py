@@ -17,6 +17,7 @@ from millegrilles_messages.messages.EnveloppeCertificat import EnveloppeCertific
 from millegrilles_messages.messages.Hachage import hacher_to_digest
 from millegrilles_webscraper.Context import WebScraperContext
 from millegrilles_webscraper.DataCollectorItem import DataCollectorItem, DataCollectorDict
+from millegrilles_webscraper.DataStructures import AttachedFile
 from millegrilles_webscraper.scrapers.WebScraper import WebScraper, FeedParametersType
 
 
@@ -46,7 +47,7 @@ class DataCollectorClearData(TypedDict):
     item_source: Optional[str]
     picture_url: Optional[str]
     picture_source: Optional[str]
-    thumbnail: Optional[str]
+    # thumbnail: Optional[str]
     group: GroupData
 
 
@@ -72,7 +73,7 @@ class DataCollectorGoogleTrendsNewsItem(DataCollectorItem):
             'item_source': self.scraped_item.source,
             'picture_url': self.scraped_item.picture,
             'picture_source': self.scraped_item.picture_source,
-            'thumbnail': None,
+            # 'thumbnail': None,
             'group': self.scraped_item.group,
         }
 
@@ -192,28 +193,28 @@ class GoogleTrendsScraper(WebScraper):
 
         # Get thumbnails for all remaining items
         thumbnail_urls = set([d.scraped_item.picture for d in data])
-        thumbnail_dict: dict[str, str] = dict()
+        thumbnail_dict: dict[str, AttachedFile] = dict()
         async with aiohttp.ClientSession() as session:
             for thumbnail_url in thumbnail_urls:
                 async with session.get(thumbnail_url) as response:
                     if response.status == 200:
                         content_bytes = await response.content.read()
-                        content_base64 = binascii.b2a_base64(content_bytes, newline=False)
-                        content_base64 = content_base64.decode('utf-8').replace('=', '')
-                        thumbnail_dict[thumbnail_url] = content_base64
+                        # content_base64 = binascii.b2a_base64(content_bytes, newline=False)
+                        # content_base64 = content_base64.decode('utf-8').replace('=', '')
+                        # thumbnail_dict[thumbnail_url] = content_base64
                     else:
                         self.__logger.warning("Error loading thumbnail (%s) at %s" % (response.status, thumbnail_url))
-                    await asyncio.sleep(0.5)
+                        await asyncio.sleep(0.5)
+                        continue
+
+                content_bytes_io = BytesIO(content_bytes)
+                thumbnail_result: AttachedFile = await self._context.file_handler.encrypt_upload_file(self._encryption_key.secret_key, content_bytes_io)
+                thumbnail_result['cle_id'] = self._encryption_key.key_id
+                thumbnail_dict[thumbnail_url] = thumbnail_result
 
         # Encrypt content and produce DataCollector item
         for item in data:
             item_data = item.produce_data()
-
-            # Inject thumbnail if present
-            picture_url = item_data['picture_url']
-            thumbnail = thumbnail_dict.get(picture_url)
-            if thumbnail:
-                item_data['thumbnail'] = thumbnail
 
             encrypted_data = chiffrer_document(self._encryption_key.secret_key, self._encryption_key.key_id, item_data)
             # Rename the data_chiffre field to new standard ciphertext_base64
@@ -225,6 +226,18 @@ class GoogleTrendsScraper(WebScraper):
                 'pub_date': item_data['pub_date'],
                 'encrypted_data': encrypted_data,
             }
+
+            # Inject thumbnail if present
+            picture_url = item_data['picture_url']
+            thumbnail = thumbnail_dict.get(picture_url)
+            if thumbnail:
+                cle_id: str = thumbnail['cle_id'] or self._encryption_key.key_id
+                data_collector_dict['files'] = [
+                    {
+                        'fuuid': thumbnail['fuuid'],
+                        'decryption': {'cle_id': cle_id, 'nonce': thumbnail['nonce'], 'format': thumbnail['format']}
+                    }
+                ]
 
             # Emit item for saving in the DataCollector domain
             attachments: Optional[dict[str, dict]] = None

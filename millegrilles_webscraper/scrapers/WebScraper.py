@@ -106,6 +106,9 @@ class WebScraper:
     def last_update(self) -> Optional[datetime.datetime]:
         return self.__last_update
 
+    def update(self, parameters: FeedParametersType):
+        raise NotImplementedError('must implement')
+
     def set_update_time(self, etag: Optional[str] = None):
         self.__last_update = datetime.datetime.now(tz=pytz.UTC)
         self.__etag = etag
