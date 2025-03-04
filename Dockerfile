@@ -2,11 +2,9 @@ FROM docker.maple.maceroc.com:5000/millegrilles_messages_python:2025.2.99
 
 ARG VBUILD=2025.2.0
 
-ENV WEB_CERT=/run/secrets/web.cert \
-    WEB_KEY=/run/secrets/web.key \
-    WEB_PORT=1443
-
-EXPOSE 80 443 444
+ENV CERT_PEM=/run/secrets/cert.pem \
+    KEY_PEM=/run/secrets/key.pem \
+    CA_PEM=/run/secrets/pki.millegrille.cert
 
 # Creer repertoire app, copier fichiers
 COPY . $BUILD_FOLDER
