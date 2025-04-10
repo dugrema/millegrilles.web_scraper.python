@@ -1,5 +1,9 @@
+import logging
+
+import aiohttp
 import asyncio
 import datetime
+import tempfile
 
 from typing import Optional, TypedDict
 
@@ -7,6 +11,8 @@ import pytz
 
 from millegrilles_messages.chiffrage.EncryptionKey import generate_new_secret
 from millegrilles_webscraper.Context import WebScraperContext
+
+CHUNK_SIZE = 1024 * 64
 
 
 class FeedInformation(TypedDict):
@@ -32,6 +38,7 @@ class FeedParametersType(TypedDict):
 class WebScraper:
 
     def __init__(self, context: WebScraperContext, feed: FeedParametersType, semaphore: asyncio.BoundedSemaphore):
+        self.__logger = logging.getLogger(__name__ + '.' + self.__class__.__name__)
         self._context = context
         self.__semaphore = semaphore
         self.__feed = feed
@@ -71,13 +78,24 @@ class WebScraper:
         if self.__refresh_rate:
             # Runs until stopped at the defined refresh_rate
             while self.__stop_event.is_set() is False:
-                await self.__scrape()
-                if self.__refresh_rate:
-                    try:
-                        await asyncio.wait_for(self.__stop_event.wait(), self.__refresh_rate.seconds)
-                        return  # Closing
-                    except asyncio.TimeoutError:
-                        pass
+                try:
+                    await self.__scrape()
+                except aiohttp.ClientResponseError as cre:
+                    if cre.status == 429:
+                        self.__logger.warning("Received HTTP 429 on %s, sleeping for a while" % self.url)
+                        try:
+                            if self.__refresh_rate.seconds < 3600:
+                                await asyncio.wait_for(self.__stop_event.wait(), 3600)
+                                return  # Closing
+                        except asyncio.TimeoutError:
+                            continue  # Retry
+                    else:
+                        raise cre
+                try:
+                    await asyncio.wait_for(self.__stop_event.wait(), self.__refresh_rate.seconds)
+                    return  # Closing
+                except asyncio.TimeoutError:
+                    pass
         else:
             # Runs once and exits
             await self.__scrape()
@@ -87,15 +105,36 @@ class WebScraper:
 
     async def __scrape(self):
         async with self.__semaphore:
-            await self.scrape()
+            self.__logger.debug(f"Scraping START on {self.url}")
+
+            with tempfile.TemporaryFile('wb+') as temp_file:
+                len_file = await self.get_content(temp_file)
+                if len_file > 0:
+                    self.__logger.debug(f"Scraped {len_file} bytes, processing latest {self.url}")
+                    temp_file.seek(0)  # Reposition file pointer to start processing
+                    await self.process(temp_file)
+                else:
+                    self.__logger.debug(f"No content found for {self.url}, skipping")
+
+            self.__logger.debug(f"Scraping DONE on {self.url}")
 
             throttle = self._context.scrape_throttle_seconds
             if throttle:
                 # Throttle, wait several seconds before releasing the semaphore
+                self.__logger.debug(f"Throttling after {self.url}")
                 await self._context.wait(throttle)
 
-    async def scrape(self):
-        raise NotImplementedError('Must be implemented')
+    async def get_content(self, tmp_file: tempfile.TemporaryFile) -> int:
+        len_file = 0
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(self.url) as response:
+                response.raise_for_status()
+                async for chunk in response.content.iter_chunked(CHUNK_SIZE):
+                    await asyncio.to_thread(tmp_file.write, chunk)
+                    len_file += len(chunk)
+
+        return len_file
 
     @property
     def url(self) -> str:
@@ -110,9 +149,15 @@ class WebScraper:
         return self.__last_update
 
     def update(self, parameters: FeedParametersType):
-        raise NotImplementedError('must implement')
+        poll_rate_update = parameters['poll_rate']
+        if poll_rate_update:
+            self.update_poll_rate(datetime.timedelta(seconds=poll_rate_update))
+        else:
+            self.update_poll_rate(None)
 
     def set_update_time(self, etag: Optional[str] = None):
         self.__last_update = datetime.datetime.now(tz=pytz.UTC)
         self.__etag = etag
 
+    async def process(self, temp_file: tempfile.TemporaryFile):
+        raise NotImplementedError('Must be implemented')

@@ -3,6 +3,8 @@ import binascii
 import datetime
 import json
 import math
+import tempfile
+
 import aiohttp
 import logging
 
@@ -84,36 +86,22 @@ class GoogleTrendsScraper(WebScraper):
         super().__init__(context, feed, semaphore)
         self.__logger = logging.getLogger(f'{__name__}.{self.__class__.__name__}')
 
-    def update(self, parameters: FeedParametersType):
-        poll_rate_update = parameters['poll_rate']
-        if poll_rate_update:
-            self.update_poll_rate(datetime.timedelta(seconds=poll_rate_update))
-        else:
-            self.update_poll_rate(None)
+    async def process(self, input_file: tempfile.TemporaryFile):
+        parsed_content = await self.__extract_content(input_file)
+        await self.__process_content(parsed_content)
 
-        # Decrypt and update url
-        #TODO
+    # async def get_content(self) -> list[DataCollectorGoogleTrendsNewsItem]:
+    #     async with aiohttp.ClientSession() as session:
+    #         async with session.get(self.url) as response:
+    #             response.raise_for_status()
+    #             content = await response.read()
+    #
+    #     parsed_content = await self.extract_content(content)
+    #
+    #     return parsed_content
 
-    async def scrape(self):
-        self.__logger.debug(f"Scraping START on {self.url}")
-        content = await self.get_content()
-        self.__logger.debug(f"Scraped {len(content)} items, processing")
-        await self.process_content(content)
-        self.__logger.debug(f"Scraping DONE on {self.url}")
-
-    async def get_content(self) -> list[DataCollectorGoogleTrendsNewsItem]:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.url) as response:
-                response.raise_for_status()
-                content = await response.read()
-
-        parsed_content = await self.extract_content(content)
-
-        return parsed_content
-
-    async def extract_content(self, content: bytes) -> list[DataCollectorGoogleTrendsNewsItem]:
-        source = BytesIO(content)
-        parsed_content: ET = ET.parse(source)
+    async def __extract_content(self, temp_file: tempfile.TemporaryFile) -> list[DataCollectorGoogleTrendsNewsItem]:
+        parsed_content: ET = ET.parse(temp_file)
 
         ns_ht = 'https://trends.google.com/trending/rss'
 
@@ -173,7 +161,7 @@ class GoogleTrendsScraper(WebScraper):
 
         return scraped_items_list
 
-    async def process_content(self, data: list[DataCollectorGoogleTrendsNewsItem]):
+    async def __process_content(self, data: list[DataCollectorGoogleTrendsNewsItem]):
         # Generate ids to check which have already been produced
         data_ids = [d.get_data_id() for d in data]
         producer = await self._context.get_producer()
@@ -264,8 +252,6 @@ class GoogleTrendsScraper(WebScraper):
             pass
 
         pass
-
-
 
 
 def parse_date(date_str: str) -> datetime.datetime:
