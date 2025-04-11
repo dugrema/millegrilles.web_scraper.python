@@ -8,6 +8,7 @@ import zlib
 
 from typing import Optional
 
+from millegrilles_messages.messages import Constantes
 from millegrilles_messages.chiffrage.Mgs4 import chiffrer_mgs4_bytes_secrete
 from millegrilles_messages.messages.Hachage import Hacheur, hacher, hacher_fichier
 from millegrilles_webscraper.Context import WebScraperContext
@@ -75,7 +76,20 @@ class WebCustomPythonScraper(WebScraper):
         # Send transaction to DataCollector
         if self.__logger.isEnabledFor(logging.DEBUG):
             self.__logger.debug("Transaction\n%s" % json.dumps(transaction, indent=2))
-        pass  # TODO
+
+        # Emit item for saving in the DataCollector domain
+        attachments: Optional[dict[str, dict]] = None
+        if self._key_command:
+            attachments = {'key': self._key_command}
+
+        producer = await self._context.get_producer()
+        response = await producer.command(transaction, "DataCollector", "saveDataItemV2",
+                                          exchange=Constantes.SECURITE_PUBLIC, attachments=attachments)
+
+        if self._encryption_key_submitted is False and response.parsed['ok'] is True:
+            # Key saved successfully
+            self._key_command = None
+            self._encryption_key_submitted = True
 
     async def _parse_and_process_file(self, input_file: tempfile.TemporaryFile) -> DataCollectorTransaction:
         """
