@@ -141,6 +141,13 @@ class AttachedFileHelper(AttachedFileInterface):
         auth_message['millegrille'] = ca.certificat_pem
         return auth_message
 
+    async def upload_file(self, fuuid: str, file_size: int, fp):
+        await asyncio.wait_for(self.ready.wait(), 10)
+        # Upload content
+        async with self.__session_semaphore:
+            self.__logger.debug(f"upload_file {fuuid} ({file_size} bytes) to {self.__filehost_url}")
+            await _upload_content(self.__session, self.__filehost_url, fuuid, file_size, fp)
+
     async def encrypt_upload_file(self, secret_key: bytes, fp) -> AttachedFile:
         # Encrypt content to temporary output
         cipher = CipherMgs4WithSecret(secret_key)
@@ -159,6 +166,7 @@ class AttachedFileHelper(AttachedFileInterface):
 
             # Upload content
             tmp_output.seek(0)  # Rewind file to beginning
+            await asyncio.wait_for(self.ready.wait(), 10)
             async with self.__session_semaphore:
                 await _upload_content(self.__session, self.__filehost_url, fuuid, file_size, tmp_output)
 

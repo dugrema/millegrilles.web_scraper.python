@@ -4,6 +4,7 @@ import aiohttp
 import asyncio
 import datetime
 import tempfile
+import pathlib
 
 from typing import Optional, TypedDict
 
@@ -33,27 +34,20 @@ class FeedParametersType(TypedDict):
     encrypted_feed_information: dict
     decrypted_feed_information: Optional[dict]
     deleted: bool
+    custom_process: Optional[str]
 
 
 class WebScraper:
 
     def __init__(self, context: WebScraperContext, feed: FeedParametersType, semaphore: asyncio.BoundedSemaphore):
         self.__logger = logging.getLogger(__name__ + '.' + self.__class__.__name__)
+        self.__stop_event = asyncio.Event()
         self._context = context
         self.__semaphore = semaphore
         self.__feed = feed
 
         self.__url = feed['decrypted_feed_information']['url']
-        poll_rate = feed.get('poll_rate')
-        if poll_rate:
-            if poll_rate < 30:
-                poll_rate = 30  # Minimum polling of 30 seconds
-            self.__refresh_rate: Optional[datetime.timedelta] = datetime.timedelta(seconds=poll_rate)
-        else:
-            self.__refresh_rate = None
-
-        self.__stop_event = asyncio.Event()
-
+        self.__refresh_rate = None
         self.__last_update: Optional[datetime.datetime] = None
         self.__etag: Optional[str] = None
 
@@ -67,11 +61,14 @@ class WebScraper:
         self._encryption_key_submitted = False
         self._key_command: Optional[dict] = None
 
+        # Finish loading all parameters
+        self.update(feed)
+
     @property
     def feed_id(self):
         return self.__feed['feed_id']
 
-    async def update_poll_rate(self, rate: Optional[datetime.timedelta]):
+    def update_poll_rate(self, rate: Optional[datetime.timedelta]):
         self.__refresh_rate = rate
 
     async def run(self):
@@ -107,12 +104,13 @@ class WebScraper:
         async with self.__semaphore:
             self.__logger.debug(f"Scraping START on {self.url}")
 
-            with tempfile.TemporaryFile('wb+') as temp_file:
-                len_file = await self.get_content(temp_file)
+            with tempfile.TemporaryFile('wb+') as temp_input_file:
+                len_file = await self.get_content(temp_input_file)
                 if len_file > 0:
                     self.__logger.debug(f"Scraped {len_file} bytes, processing latest {self.url}")
-                    temp_file.seek(0)  # Reposition file pointer to start processing
-                    await self.process(temp_file)
+                    temp_input_file.seek(0)  # Reposition file pointer to start processing
+                    with tempfile.TemporaryFile('wb+') as temp_output_file:
+                        await self.process(temp_input_file, temp_output_file)
                 else:
                     self.__logger.debug(f"No content found for {self.url}, skipping")
 
@@ -127,12 +125,24 @@ class WebScraper:
     async def get_content(self, tmp_file: tempfile.TemporaryFile) -> int:
         len_file = 0
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.url) as response:
-                response.raise_for_status()
-                async for chunk in response.content.iter_chunked(CHUNK_SIZE):
-                    await asyncio.to_thread(tmp_file.write, chunk)
+        if self.url.startswith("file://"):
+            # Process local file
+            local_path_str = self.url[len("file://"):]
+            local_filename = pathlib.Path(local_path_str)
+            with open(local_filename, 'rb') as fp:
+                while True:
+                    chunk = fp.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    tmp_file.write(chunk)
                     len_file += len(chunk)
+        else:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(self.url) as response:
+                    response.raise_for_status()
+                    async for chunk in response.content.iter_chunked(CHUNK_SIZE):
+                        await asyncio.to_thread(tmp_file.write, chunk)
+                        len_file += len(chunk)
 
         return len_file
 
@@ -151,7 +161,11 @@ class WebScraper:
     def update(self, parameters: FeedParametersType):
         poll_rate_update = parameters['poll_rate']
         if poll_rate_update:
-            self.update_poll_rate(datetime.timedelta(seconds=poll_rate_update))
+            if poll_rate_update < 30:
+                # Minimum polling of 30 seconds
+                self.update_poll_rate(datetime.timedelta(seconds=30))
+            else:
+                self.update_poll_rate(datetime.timedelta(seconds=poll_rate_update))
         else:
             self.update_poll_rate(None)
 
@@ -159,5 +173,5 @@ class WebScraper:
         self.__last_update = datetime.datetime.now(tz=pytz.UTC)
         self.__etag = etag
 
-    async def process(self, temp_file: tempfile.TemporaryFile):
+    async def process(self, temp_input_file: tempfile.TemporaryFile, temp_output_file: tempfile.TemporaryFile()):
         raise NotImplementedError('Must be implemented')

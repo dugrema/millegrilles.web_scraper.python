@@ -6,6 +6,7 @@ class AttachedFile(TypedDict):
     format: str
     nonce: str
     cle_id: Optional[str]
+    compression: Optional[str]
 
 
 class AttachedFileInterface:
@@ -18,6 +19,35 @@ class AttachedFileInterface:
         :return:
         """
         raise NotImplementedError('interface method - must override')
+
+
+class CustomProcessOutput:
+
+    def __init__(self):
+        self.files: Optional[list[AttachedFile]] = None
+        self.pub_date_start: Optional[int] = None
+        self.pub_date_end: Optional[int] = None
+
+
+class DataCollectorTransaction(TypedDict):
+    feed_id: str
+    data_id: str
+    save_date: int
+    data_fuuid: str
+    key_ids: list[str]
+    pub_date_start: Optional[int]
+    pub_date_end: Optional[int]
+    attached_fuuids: Optional[list[str]]
+
+
+class DataFeedFile(TypedDict):
+    feed_id: str
+    data_id: str
+    save_date: int
+    encrypted_data: dict
+    pub_start_date: Optional[int]
+    pub_end_date: Optional[int]
+    files: Optional[list[AttachedFile]]
 
 
 class Filehost:

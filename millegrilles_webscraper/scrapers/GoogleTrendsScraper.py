@@ -86,7 +86,7 @@ class GoogleTrendsScraper(WebScraper):
         super().__init__(context, feed, semaphore)
         self.__logger = logging.getLogger(f'{__name__}.{self.__class__.__name__}')
 
-    async def process(self, input_file: tempfile.TemporaryFile):
+    async def process(self, input_file: tempfile.TemporaryFile, output_file: tempfile.TemporaryFile()):
         parsed_content = await self.__extract_content(input_file)
         await self.__process_content(parsed_content)
 
