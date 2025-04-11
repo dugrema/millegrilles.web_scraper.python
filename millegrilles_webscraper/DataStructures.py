@@ -25,6 +25,7 @@ class CustomProcessOutput:
 
     def __init__(self):
         self.files: Optional[list[AttachedFile]] = None
+        self.encrypted_files_map: Optional[dict] = None
         self.pub_date_start: Optional[int] = None
         self.pub_date_end: Optional[int] = None
 
@@ -48,6 +49,7 @@ class DataFeedFile(TypedDict):
     pub_start_date: Optional[int]
     pub_end_date: Optional[int]
     files: Optional[list[AttachedFile]]
+    encrypted_files_map: Optional[dict]
 
 
 class Filehost:

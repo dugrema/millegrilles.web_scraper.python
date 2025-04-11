@@ -52,6 +52,7 @@ class WebCustomPythonScraper(WebScraper):
 
         # Optional intermediate processing step
         attached_files: Optional[list[AttachedFile]] = None
+        encrypted_files_map: Optional[dict] = None
         if self.__processing_method:
             # values = {"context": self._context, "encryption_key": self._encryption_key, "transaction": transaction, "input_file": input_file}
             values = {}
@@ -61,13 +62,13 @@ class WebCustomPythonScraper(WebScraper):
                 transaction['pub_date_start'] = int(output.pub_date_start.timestamp() * 1000.0)
                 transaction['pub_date_end'] = int(output.pub_date_end.timestamp() * 1000.0)
                 attached_files = output.files
-
+                encrypted_files_map = output.encrypted_files_map
             except Exception as e:
                 self.__logger.exception("Error during custom process")
                 raise e
 
         # Generate the output content for the new DataCollector transaction and for filehost.
-        fuuid, file_size = await self._generate_output_content(transaction, input_file, output_file, attached_files)
+        fuuid, file_size = await self._generate_output_content(transaction, input_file, output_file, attached_files, encrypted_files_map)
 
         # Upload output file to filehost
         output_file.seek(0)
@@ -124,7 +125,8 @@ class WebCustomPythonScraper(WebScraper):
 
 
     async def _generate_output_content(self, transaction: DataCollectorTransaction, input_file: tempfile.TemporaryFile,
-                                       output_file: tempfile.TemporaryFile, attached_files: Optional[list[AttachedFile]] = None) -> (str, int):
+                                       output_file: tempfile.TemporaryFile, attached_files: Optional[list[AttachedFile]] = None,
+                                       encrypted_files_map: Optional[dict] = None) -> (str, int):
 
         # Encrypt the input data
         input_file_bytes: Optional[bytes] = await asyncio.to_thread(input_file.read)
@@ -141,11 +143,20 @@ class WebCustomPythonScraper(WebScraper):
             "encrypted_data": cipher_info,
             "pub_start_date": transaction.get('pub_date_start'),
             "pub_end_date": transaction.get('pub_date_start') or transaction.get('save_date'),
-            "files": attached_files
+            "files": attached_files,
+            "encrypted_files_map": encrypted_files_map,
         }
 
         # Add information to transaction
         transaction['key_ids'].append(self._encryption_key.key_id)
+        attached_fuuids = transaction['attached_fuuids'] or list()
+        key_ids = transaction['key_ids']
+        for attached_file in attached_files:
+            attached_fuuids.append(attached_file['fuuid'])
+            cle_id = attached_file['cle_id']
+            if cle_id not in key_ids:
+                key_ids.append(cle_id)
+        transaction['attached_fuuids'] = attached_fuuids
 
         # Prepare output bytes, compress and produce fuuid
         output_file_bytes = json.dumps(data_feed_file).encode('utf-8')
