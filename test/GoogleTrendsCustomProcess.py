@@ -42,7 +42,6 @@ def __extract_data(input_file: tempfile.TemporaryFile) -> (datetime.datetime, da
         if pub_date_item_elem is not None:
             pub_date_item_str = pub_date_item_elem.text
             pub_date = parse_date(pub_date_item_str)
-            print("PubDate %s = %s" % (pub_date_item_str, pub_date))
             if pub_date_start is None or pub_date_start > pub_date:
                 pub_date_start = pub_date
             if pub_date_end is None or pub_date_end < pub_date:
@@ -64,7 +63,6 @@ def __extract_data(input_file: tempfile.TemporaryFile) -> (datetime.datetime, da
 async def __verify_image_digests(context: WebScraperContext, picture_urls: dict[str, PictureInfo]):
     # Check with DataCollector to determine which pictures have already been uploaded to filehost
     picture_digests = [d for d in picture_urls.keys()]
-    print("Check if digests exist: %s" % picture_digests)
 
     query = {"correlations": picture_digests}
     producer = await context.get_producer()
@@ -72,13 +70,12 @@ async def __verify_image_digests(context: WebScraperContext, picture_urls: dict[
     response_parsed = response.parsed
     if response_parsed.get('ok') is True:
         existing_files = response_parsed['files']
-        print("Reusing volatile files: %s" % existing_files)
         for existing_file in existing_files:
             # Map existing
             attached_file = picture_urls[existing_file['correlation']]
             attached_file.map_volatile(existing_file)
     else:
-        print("Volatil check error response: %s" % response_parsed)
+        print("Volatile check error response: %s" % response_parsed)
 
 async def __download_save_pictures(context: WebScraperContext, encryption_key: EncryptionKey, picture_urls: dict[str, PictureInfo]):
     for picture_info in picture_urls.values():

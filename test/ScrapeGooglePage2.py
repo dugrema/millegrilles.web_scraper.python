@@ -143,10 +143,12 @@ async def run_scrape_test(context: WebScraperContext):
 
     feed = {
         'feed_id': 'Test',
-        'decrypted_feed_information': {'url': 'https://trends.google.com/trending/rss?geo=US'},
+        'decrypted_feed_information': {
+            'url': 'https://trends.google.com/trending/rss?geo=US',
+            'custom_code': CUSTOM_PROCESS,
+        },
         # 'decrypted_feed_information': {'url': 'file:///home/mathieu/Downloads/rss_googletrends_us_20250411_0816.xml'},
         'poll_rate': 120,
-        'custom_process': CUSTOM_PROCESS,
     }
 
     google_scraper = WebCustomPythonScraper(context, feed, semaphore)

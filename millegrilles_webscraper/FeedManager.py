@@ -11,6 +11,7 @@ from millegrilles_messages.messages import Constantes
 from millegrilles_webscraper.Context import WebScraperContext
 from millegrilles_webscraper.scrapers import WebScraper
 from millegrilles_webscraper.scrapers.GoogleTrendsScraper import GoogleTrendsScraper
+from millegrilles_webscraper.scrapers.WebCustomPythonScraper import WebCustomPythonScraper
 from millegrilles_webscraper.scrapers.WebScraper import FeedParametersType, FeedInformation
 
 
@@ -120,5 +121,7 @@ class FeedManager:
         feed_type = feed['feed_type']
         if feed_type == 'web.google_trends.news':
             return GoogleTrendsScraper(self.__context, feed, self.__feed_semaphore)
+        elif feed_type == 'web.scraper.python_custom':
+            return WebCustomPythonScraper(self.__context, feed, self.__feed_semaphore)
         else:
             raise NotImplementedError('Unsupported feed type: %s' % feed_type)

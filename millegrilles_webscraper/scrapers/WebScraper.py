@@ -34,7 +34,6 @@ class FeedParametersType(TypedDict):
     encrypted_feed_information: dict
     decrypted_feed_information: Optional[dict]
     deleted: bool
-    custom_process: Optional[str]
 
 
 class WebScraper:

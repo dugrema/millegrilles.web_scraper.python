@@ -37,15 +37,15 @@ class WebCustomPythonScraper(WebScraper):
 
     def update(self, parameters: FeedParametersType):
         super().update(parameters)
-        custom_process = parameters.get('custom_process')
-        if custom_process:
-            try:
-                self.__processing_method = compile(custom_process, '<string>', 'exec')
-            except Exception as e:
-                self.__logger.exception("Error parsing custom process")
-                raise e
-        else:
+        try:
+            custom_process = parameters['decrypted_feed_information']['custom_code']
+            self.__processing_method = compile(custom_process, '<string>', 'exec')
+        except KeyError:
             self.__processing_method = None
+        except Exception as e:
+            self.__logger.exception("Error parsing custom process")
+            self.__processing_method = None
+            raise e
 
     async def process(self, input_file: tempfile.TemporaryFile, output_file: tempfile.TemporaryFile):
         transaction = await self._parse_and_process_file(input_file)
@@ -188,12 +188,13 @@ class WebCustomPythonScraper(WebScraper):
         transaction['key_ids'].append(self._encryption_key.key_id)
         attached_fuuids = transaction['attached_fuuids'] or list()
         key_ids = transaction['key_ids']
-        for attached_file in attached_files:
-            attached_fuuids.append(attached_file['fuuid'])
-            cle_id = attached_file['cle_id']
-            if cle_id not in key_ids:
-                key_ids.append(cle_id)
-        transaction['attached_fuuids'] = attached_fuuids
+        if attached_files is not None:
+            for attached_file in attached_files:
+                attached_fuuids.append(attached_file['fuuid'])
+                cle_id = attached_file['cle_id']
+                if cle_id not in key_ids:
+                    key_ids.append(cle_id)
+            transaction['attached_fuuids'] = attached_fuuids
 
         # Prepare output bytes, compress and produce fuuid
         output_file_bytes = json.dumps(data_feed_file).encode('utf-8')
