@@ -1,3 +1,4 @@
+import datetime
 from typing import Optional, TypedDict
 
 
@@ -21,13 +22,49 @@ class AttachedFileInterface:
         raise NotImplementedError('interface method - must override')
 
 
+class AttachedFileCorrelation:
+
+    def __init__(self, correlation: str):
+        self.correlation = correlation
+        self.fuuid: Optional[str] = None
+        self.format: Optional[str] = None
+        self.cle_id: Optional[str] = None
+        self.nonce: Optional[str] = None
+        self.compression: Optional[str] = None
+
+    def to_attached_file(self) -> AttachedFile:
+        if self.fuuid is None or self.format is None or self.nonce is None:
+            raise ValueError('Missing at least one of fuuid, format or nonce')
+
+        return {
+            "fuuid": self.fuuid,
+            "format": self.format,
+            "nonce": self.nonce,
+            "cle_id": self.cle_id,
+            "compression": self.compression
+        }
+
+    def map_key(self) -> Optional[str]:
+        """
+        Use to produce a key: fuuid map that will be encrypted when the key is sensitive (e.g. user name, url, etc)
+        :return:
+        """
+        return None
+
+    def map_volatile(self, data: dict):
+        self.fuuid = data.get('fuuid')
+        self.format = data.get('format')
+        self.nonce = data.get('nonce')
+        self.cle_id = data.get('cle_id')
+        self.compression = data.get('compression')
+
+
 class CustomProcessOutput:
 
     def __init__(self):
-        self.files: Optional[list[AttachedFile]] = None
-        self.encrypted_files_map: Optional[dict] = None
-        self.pub_date_start: Optional[int] = None
-        self.pub_date_end: Optional[int] = None
+        self.pub_date_start: Optional[datetime.datetime] = None
+        self.pub_date_end: Optional[datetime.datetime] = None
+        self.files: Optional[list[AttachedFileCorrelation]] = None
 
 
 class DataCollectorTransaction(TypedDict):

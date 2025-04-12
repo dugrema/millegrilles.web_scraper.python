@@ -9,10 +9,11 @@ import zlib
 from typing import Optional
 
 from millegrilles_messages.messages import Constantes
-from millegrilles_messages.chiffrage.Mgs4 import chiffrer_mgs4_bytes_secrete
+from millegrilles_messages.chiffrage.Mgs4 import chiffrer_mgs4_bytes_secrete, chiffrer_document
 from millegrilles_messages.messages.Hachage import Hacheur, hacher, hacher_fichier
 from millegrilles_webscraper.Context import WebScraperContext
-from millegrilles_webscraper.DataStructures import DataCollectorTransaction, DataFeedFile, AttachedFile
+from millegrilles_webscraper.DataStructures import DataCollectorTransaction, DataFeedFile, AttachedFile, \
+    CustomProcessOutput
 from millegrilles_webscraper.scrapers.WebScraper import WebScraper, FeedParametersType
 
 CHUNK_SIZE = 1024 * 64
@@ -53,6 +54,7 @@ class WebCustomPythonScraper(WebScraper):
         # Optional intermediate processing step
         attached_files: Optional[list[AttachedFile]] = None
         encrypted_files_map: Optional[dict] = None
+        output: Optional[CustomProcessOutput] = None
         if self.__processing_method:
             # values = {"context": self._context, "encryption_key": self._encryption_key, "transaction": transaction, "input_file": input_file}
             values = {}
@@ -61,8 +63,22 @@ class WebCustomPythonScraper(WebScraper):
                 output = await values['process'](self._context, self._encryption_key, input_file)
                 transaction['pub_date_start'] = int(output.pub_date_start.timestamp() * 1000.0)
                 transaction['pub_date_end'] = int(output.pub_date_end.timestamp() * 1000.0)
-                attached_files = output.files
-                encrypted_files_map = output.encrypted_files_map
+
+                # Create attached file list, encrypt the file map
+                attached_files = list()
+                file_map = dict()
+                if output.files is not None:
+                    for f in output.files:
+                       attached_files.append(f.to_attached_file())
+                       file_key = f.map_key()
+                       if file_key is not None:
+                          file_map[file_key] = f.fuuid
+
+                if len(attached_files) == 0:
+                    attached_files = None
+                else:
+                    if len(file_map) > 0:
+                       encrypted_files_map = chiffrer_document(self._encryption_key.secret_key, self._encryption_key.key_id, file_map)
             except Exception as e:
                 self.__logger.exception("Error during custom process")
                 raise e
@@ -91,6 +107,24 @@ class WebCustomPythonScraper(WebScraper):
             # Key saved successfully
             self._key_command = None
             self._encryption_key_submitted = True
+
+        if output is not None and output.files is not None and len(output.files) > 0:
+            # Save a list of attached file references in volatile DB storage to allow reusing them instead of saving
+            # duplicates (e.g. web thumbnails). The correlation will be used to find duplicates.
+            file_correlations = list()
+            for f in output.files:
+                file_correlations.append({
+                    "correlation": f.correlation,
+                    "fuuid": f.fuuid,
+                    "format": f.format,
+                    "cle_id": f.cle_id,
+                    "nonce": f.nonce,
+                    "compression": f.compression,
+                })
+
+            files_command = {"files": file_correlations}
+            await producer.command(files_command, "DataCollector", "addFuuidsVolatile",
+                                   exchange=Constantes.SECURITE_PUBLIC, attachments=attachments)
 
     async def _parse_and_process_file(self, input_file: tempfile.TemporaryFile) -> DataCollectorTransaction:
         """

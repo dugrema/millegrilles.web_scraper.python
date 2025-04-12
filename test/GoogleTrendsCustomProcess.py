@@ -9,21 +9,21 @@ from typing import Optional
 from xml.etree import ElementTree as ET
 
 from millegrilles_messages.chiffrage.EncryptionKey import EncryptionKey
-from millegrilles_messages.chiffrage.Mgs4 import chiffrer_document
 from millegrilles_messages.messages.Hachage import hacher
 from millegrilles_webscraper.Context import WebScraperContext
-from millegrilles_webscraper.DataStructures import CustomProcessOutput, AttachedFile
+from millegrilles_webscraper.DataStructures import CustomProcessOutput, AttachedFile, AttachedFileCorrelation
 
 NAMESPACE_HT = 'https://trends.google.com/trending/rss'
 
-class PictureInfo:
+class PictureInfo(AttachedFileCorrelation):
+
     def __init__(self, url: str):
+        correlation = hacher(url, 'blake2s-256', 'base64')[1:]  # Remove multibase marker
+        super().__init__(correlation)
         self.url = url
-        self.fuuid: Optional[str] = None
-        self.nonce: Optional[str] = None
-        self.format: Optional[str] = None
-        self.cle_id: Optional[str] = None
-        self.compression: Optional[str] = None
+
+    def map_key(self) -> Optional[str]:
+        return self.url
 
 
 def __extract_data(input_file: tempfile.TemporaryFile) -> (datetime.datetime, datetime.datetime, dict[str, PictureInfo]):
@@ -56,9 +56,8 @@ def __extract_data(input_file: tempfile.TemporaryFile) -> (datetime.datetime, da
             picture_url_text = picture_url.text
             if picture_url_text is not None:
                 # Hash the url with blake2s un base64, this will be used to check if the picture has already been loaded
-                picture_url_digest = hacher(picture_url_text, 'blake2s-256', 'base64')[1:]  # Remove multibase marker
                 picture_info = PictureInfo(picture_url_text)
-                picture_urls[picture_url_digest] = picture_info
+                picture_urls[picture_info.correlation] = picture_info
 
     return pub_date_start, pub_date_end, picture_urls
 
@@ -67,54 +66,46 @@ async def __verify_image_digests(context: WebScraperContext, picture_urls: dict[
     picture_digests = [d for d in picture_urls.keys()]
     print("Check if digests exist: %s" % picture_digests)
 
-    existing = []  # TODO - query to get existing digests
-
-    for existing_digest in existing:
-        # Map existing
-        picture_urls[existing_digest].fuuid = "XXX"
-
-async def __download_save_pictures(context: WebScraperContext, encryption_key: EncryptionKey, picture_urls: dict[str, PictureInfo]) \
-        -> (Optional[list[AttachedFile]], Optional[dict]):
-
-    if len(picture_urls) > 0:
-        attached_files: Optional[list[AttachedFile]] = list()
-        file_map: dict[str, str] = dict()  # Create map of url: fuuid
-        for picture_info in picture_urls.values():
-            if picture_info.fuuid is None:
-                async with aiohttp.ClientSession() as session:
-                    picture_url = picture_info.url
-                    async with session.get(picture_url) as response:
-                        if response.status == 200:
-                            content_bytes = await response.content.read()
-                            content_bytes_io = BytesIO(content_bytes)
-                            attached_file: AttachedFile = await context.file_handler.encrypt_upload_file(
-                                encryption_key.secret_key, content_bytes_io)
-                            attached_file['cle_id'] = encryption_key.key_id
-                            # Map to lists
-                            file_map[picture_url] = attached_file['fuuid']
-                            attached_files.append(attached_file)
-                        else:
-                            print("Error loading thumbnail (%s) at %s" % (response.status, picture_url))
-                            await asyncio.sleep(0.5)
-                            continue
-                pass
-            else:
-                file_map[picture_info.url] = picture_info.fuuid
-                attached_files.append({
-                    "fuuid": picture_info.fuuid,
-                    "format": picture_info.format,
-                    "nonce": picture_info.nonce,
-                    "cle_id": picture_info.cle_id,
-                    "compression": picture_info.compression,
-                })
-
-        # Encrypt the file map
-        encrypted_file_map = chiffrer_document(encryption_key.secret_key, encryption_key.key_id, file_map)
+    query = {"correlations": picture_digests}
+    producer = await context.get_producer()
+    response = await producer.request(query, "DataCollector", "getFuuidsVolatile", exchange="1.public")
+    response_parsed = response.parsed
+    if response_parsed.get('ok') is True:
+        existing_files = response_parsed['files']
+        print("Reusing volatile files: %s" % existing_files)
+        for existing_file in existing_files:
+            # Map existing
+            attached_file = picture_urls[existing_file['correlation']]
+            attached_file.map_volatile(existing_file)
     else:
-        attached_files = None
-        encrypted_file_map = None
+        print("Volatil check error response: %s" % response_parsed)
 
-    return attached_files, encrypted_file_map
+async def __download_save_pictures(context: WebScraperContext, encryption_key: EncryptionKey, picture_urls: dict[str, PictureInfo]):
+    for picture_info in picture_urls.values():
+        if picture_info.fuuid is None:
+            async with aiohttp.ClientSession() as session:
+                picture_url = picture_info.url
+                print("Downloading thumbnail %s" % picture_url)
+                async with session.get(picture_url) as response:
+                    if response.status == 200:
+                        content_bytes = await response.content.read()
+                        content_bytes_io = BytesIO(content_bytes)
+                        attached_file: AttachedFile = await context.file_handler.encrypt_upload_file(
+                            encryption_key.secret_key, content_bytes_io)
+
+                        # Inject file information into picture_info
+                        picture_info.fuuid = attached_file['fuuid']
+                        picture_info.format = attached_file['format']
+                        picture_info.compression = attached_file.get('compression')
+                        picture_info.nonce = attached_file.get('nonce')
+                        picture_info.cle_id = encryption_key.key_id
+                    else:
+                        print("Error loading thumbnail (%s) at %s" % (response.status, picture_url))
+                        await asyncio.sleep(0.5)
+                        continue
+            pass
+
+    return None
 
 def parse_date(date_str: str) -> datetime.datetime:
     return datetime.datetime.strptime(date_str, '%a, %d %b %Y %H:%M:%S %z')
@@ -125,12 +116,11 @@ async def process(context: WebScraperContext, encryption_key: EncryptionKey,
     output = CustomProcessOutput()
 
     # Extract picture URLs from input
-    output.pub_date_start, output.pub_date_end, picture_urls = await asyncio.to_thread(__extract_data, input_file)
+    output.pub_date_start, output.pub_date_end, attached_files = await asyncio.to_thread(__extract_data, input_file)
     # Remove already downloaded pictures (checking with DataCollector domain)
-    await __verify_image_digests(context, picture_urls)
+    await __verify_image_digests(context, attached_files)
     # Download pictures and save to filehost
-    attached_files, encrypted_files_map = await __download_save_pictures(context, encryption_key, picture_urls)
-    output.files = attached_files
-    output.encrypted_files_map = encrypted_files_map
+    await __download_save_pictures(context, encryption_key, attached_files)
+    output.files = [f for f in attached_files.values()]
 
     return output
