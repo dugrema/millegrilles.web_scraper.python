@@ -38,8 +38,11 @@ class WebCustomPythonScraper(WebScraper):
     def update(self, parameters: FeedParametersType):
         super().update(parameters)
         try:
-            custom_process = parameters['decrypted_feed_information']['custom_code']
-            self.__processing_method = compile(custom_process, '<string>', 'exec')
+            custom_process: Optional[str] = parameters['decrypted_feed_information']['custom_code']
+            if custom_process is not None and len(custom_process.strip()) > 0:
+                self.__processing_method = compile(custom_process, '<string>', 'exec')
+            else:
+                self.__processing_method = None
         except KeyError:
             self.__processing_method = None
         except Exception as e:
