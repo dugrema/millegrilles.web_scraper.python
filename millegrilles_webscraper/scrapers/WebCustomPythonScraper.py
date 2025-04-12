@@ -126,6 +126,9 @@ class WebCustomPythonScraper(WebScraper):
             await producer.command(files_command, "DataCollector", "addFuuidsVolatile",
                                    exchange=Constantes.SECURITE_PUBLIC, attachments=attachments)
 
+        if response.parsed['ok'] is not True:
+            self.__logger.error("Error saving data file: %s" % response.parsed)
+
     async def _parse_and_process_file(self, input_file: tempfile.TemporaryFile) -> DataCollectorTransaction:
         """
         This is the main processing step.
