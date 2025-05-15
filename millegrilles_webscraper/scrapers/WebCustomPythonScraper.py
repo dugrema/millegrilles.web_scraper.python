@@ -10,6 +10,7 @@ from typing import Optional
 
 from millegrilles_messages.messages import Constantes
 from millegrilles_messages.chiffrage.Mgs4 import chiffrer_mgs4_bytes_secrete, chiffrer_document
+from millegrilles_messages.messages.EnveloppeCertificat import EnveloppeCertificat
 from millegrilles_messages.messages.Hachage import Hacheur, hacher, hacher_fichier
 from millegrilles_webscraper.Context import WebScraperContext
 from millegrilles_webscraper.DataStructures import DataCollectorTransaction, DataFeedFile, AttachedFile, \
@@ -97,12 +98,23 @@ class WebCustomPythonScraper(WebScraper):
         if self.__logger.isEnabledFor(logging.DEBUG):
             self.__logger.debug("Transaction\n%s" % json.dumps(transaction, indent=2))
 
+        producer = await self._context.get_producer()
+
+        if self._encryption_key_submitted is False and self._key_command is None:
+            idmg = self._context.ca.idmg
+            fiche_response = await producer.request({'idmg': idmg}, 'CoreTopologie', 'ficheMillegrille', exchange=Constantes.SECURITE_PUBLIC)
+            encryption_keys = fiche_response.parsed['chiffrage']
+            certs = [EnveloppeCertificat.from_pem('\n'.join(c)) for c in encryption_keys]
+            encrypted_keys = self._encryption_key.produce_keymaster_content(certs)
+            key_command, _message_id = self._context.formatteur.signer_message(
+                Constantes.KIND_COMMANDE, encrypted_keys, 'MaitreDesCles', action='ajouterCleDomaines')
+            self._key_command = key_command
+
         # Emit item for saving in the DataCollector domain
         attachments: Optional[dict[str, dict]] = None
         if self._key_command:
             attachments = {'key': self._key_command}
 
-        producer = await self._context.get_producer()
         response = await producer.command(transaction, "DataCollector", "saveDataItemV2",
                                           exchange=Constantes.SECURITE_PUBLIC, attachments=attachments)
 
