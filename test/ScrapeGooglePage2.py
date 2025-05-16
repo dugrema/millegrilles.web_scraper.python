@@ -59,16 +59,17 @@ def __extract_data(input_file: tempfile.TemporaryFile) -> (datetime.datetime, da
             if pub_date_end is None or pub_date_end < pub_date:
                 pub_date_end = pub_date
 
-        picture_url = item.find('{%s}news_item/{%s}news_item_picturea' % (NAMESPACE_HT, NAMESPACE_HT))
-        if picture_url is None:
-            picture_url = item.find('{%s}picture' % NAMESPACE_HT)
-
-        if picture_url is not None:
-            picture_url_text = picture_url.text
-            if picture_url_text is not None:
-                # Hash the url with blake2s un base64, this will be used to check if the picture has already been loaded
-                picture_info = PictureInfo(picture_url_text)
-                picture_urls[picture_info.correlation] = picture_info
+        for news_item in item.findall('./{%s}news_item' % NAMESPACE_HT):
+            picture_url = news_item.find('./{%s}news_item_picture' % NAMESPACE_HT)
+            if picture_url is None:
+                picture_url = item.find('{%s}picture' % NAMESPACE_HT)
+    
+            if picture_url is not None:
+                picture_url_text = picture_url.text
+                if picture_url_text is not None:
+                    # Hash the url with blake2s un base64, this will be used to check if the picture has already been loaded
+                    picture_info = PictureInfo(picture_url_text)
+                    picture_urls[picture_info.correlation] = picture_info
 
     return pub_date_start, pub_date_end, picture_urls
 

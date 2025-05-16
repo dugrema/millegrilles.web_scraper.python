@@ -90,16 +90,6 @@ class GoogleTrendsScraper(WebScraper):
         parsed_content = await self.__extract_content(input_file)
         await self.__process_content(parsed_content)
 
-    # async def get_content(self) -> list[DataCollectorGoogleTrendsNewsItem]:
-    #     async with aiohttp.ClientSession() as session:
-    #         async with session.get(self.url) as response:
-    #             response.raise_for_status()
-    #             content = await response.read()
-    #
-    #     parsed_content = await self.extract_content(content)
-    #
-    #     return parsed_content
-
     async def __extract_content(self, temp_file: tempfile.TemporaryFile) -> list[DataCollectorGoogleTrendsNewsItem]:
         parsed_content: ET = ET.parse(temp_file)
 
