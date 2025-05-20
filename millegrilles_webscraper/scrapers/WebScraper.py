@@ -76,6 +76,8 @@ class WebScraper:
             while self.__stop_event.is_set() is False:
                 try:
                     await self.__scrape()
+                except asyncio.TimeoutError:
+                    self.__logger.warning(f"Timeout while processing {self.url}")
                 except aiohttp.ClientResponseError as cre:
                     if cre.status == 429:
                         self.__logger.warning("Received HTTP 429 on %s, sleeping for a while" % self.url)
@@ -103,17 +105,20 @@ class WebScraper:
         async with self.__semaphore:
             self.__logger.debug(f"Scraping START on {self.url}")
 
-            with tempfile.TemporaryFile('wb+') as temp_input_file:
-                len_file = await self.get_content(temp_input_file)
-                if len_file > 0:
-                    self.__logger.debug(f"Scraped {len_file} bytes, processing latest {self.url}")
-                    temp_input_file.seek(0)  # Reposition file pointer to start processing
-                    with tempfile.TemporaryFile('wb+') as temp_output_file:
-                        await self.process(temp_input_file, temp_output_file)
-                else:
-                    self.__logger.debug(f"No content found for {self.url}, skipping")
+            try:
+                with tempfile.TemporaryFile('wb+') as temp_input_file:
+                    len_file = await self.get_content(temp_input_file)
+                    if len_file > 0:
+                        self.__logger.debug(f"Scraped {len_file} bytes, processing latest {self.url}")
+                        temp_input_file.seek(0)  # Reposition file pointer to start processing
+                        with tempfile.TemporaryFile('wb+') as temp_output_file:
+                            await self.process(temp_input_file, temp_output_file)
+                    else:
+                        self.__logger.debug(f"No content found for {self.url}, skipping")
 
-            self.__logger.debug(f"Scraping DONE on {self.url}")
+                self.__logger.debug(f"Scraping DONE on {self.url}")
+            except asyncio.TimeoutError:
+                self.__logger.warning(f"Timeout when fetching web content on {self.url}")
 
             throttle = self._context.scrape_throttle_seconds
             if throttle:
