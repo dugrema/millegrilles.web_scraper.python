@@ -116,7 +116,7 @@ class WebScraper:
                     else:
                         self.__logger.debug(f"No content found for {self.url}, skipping")
 
-                self.__logger.debug(f"Scraping DONE on {self.url}")
+                self.__logger.info(f"Scraping DONE on {self.url}")
             except asyncio.TimeoutError:
                 self.__logger.warning(f"Timeout when fetching web content on {self.url}")
 
