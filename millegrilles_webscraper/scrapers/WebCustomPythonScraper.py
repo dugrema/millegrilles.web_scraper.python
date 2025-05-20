@@ -142,7 +142,10 @@ class WebCustomPythonScraper(WebScraper):
                                    exchange=Constantes.SECURITE_PUBLIC, attachments=attachments)
 
         if response.parsed['ok'] is not True:
-            self.__logger.error("Error saving data file: %s" % response.parsed)
+            if response.parsed.get('code') == 409:
+                pass  # File is flagged as duplicate (Ok: already saved)
+            else:
+                self.__logger.error("Error saving data file: %s" % response.parsed)
 
     async def _parse_and_process_file(self, input_file: tempfile.TemporaryFile) -> DataCollectorTransaction:
         """
