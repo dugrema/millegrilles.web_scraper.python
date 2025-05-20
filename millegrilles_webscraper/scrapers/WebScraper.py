@@ -164,11 +164,12 @@ class WebScraper:
         return self.__last_update
 
     def update(self, parameters: FeedParametersType):
-        poll_rate_update = parameters['poll_rate']
+        poll_rate_update = parameters.get('poll_rate')
         if poll_rate_update:
-            if poll_rate_update < 30:
-                # Minimum polling of 30 seconds
-                self.update_poll_rate(datetime.timedelta(seconds=30))
+            if poll_rate_update < 120:
+                self.__logger.warning(f"Polling rate of {poll_rate_update} is less than 120 seconds, clamping to 2 minutes")
+                # Minimum polling of 60 seconds
+                self.update_poll_rate(datetime.timedelta(seconds=120))
             else:
                 self.update_poll_rate(datetime.timedelta(seconds=poll_rate_update))
         else:
