@@ -141,7 +141,8 @@ class WebScraper:
                     tmp_file.write(chunk)
                     len_file += len(chunk)
         else:
-            async with aiohttp.ClientSession() as session:
+            session_timeout = aiohttp.ClientTimeout(total=90, connect=10, sock_read=20)
+            async with aiohttp.ClientSession(timeout=session_timeout) as session:
                 async with session.get(self.url) as response:
                     response.raise_for_status()
                     async for chunk in response.content.iter_chunked(CHUNK_SIZE):
