@@ -141,7 +141,7 @@ class WebScraper:
                     tmp_file.write(chunk)
                     len_file += len(chunk)
         else:
-            session_timeout = aiohttp.ClientTimeout(total=90, connect=10, sock_read=20)
+            session_timeout = aiohttp.ClientTimeout(total=90, connect=5, sock_read=10)
             headers = dict()
             try:
                 headers['user-agent'] = self.__feed['decrypted_feed_information']['user_agent']
