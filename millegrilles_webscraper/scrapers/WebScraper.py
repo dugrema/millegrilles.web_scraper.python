@@ -142,7 +142,13 @@ class WebScraper:
                     len_file += len(chunk)
         else:
             session_timeout = aiohttp.ClientTimeout(total=90, connect=10, sock_read=20)
-            async with aiohttp.ClientSession(timeout=session_timeout) as session:
+            headers = dict()
+            try:
+                headers['user-agent'] = self.__feed['decrypted_feed_information']['user_agent']
+                # headers['user-agent'] = 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0'
+            except KeyError:
+                pass
+            async with aiohttp.ClientSession(headers=headers, timeout=session_timeout) as session:
                 async with session.get(self.url) as response:
                     response.raise_for_status()
                     async for chunk in response.content.iter_chunked(CHUNK_SIZE):
